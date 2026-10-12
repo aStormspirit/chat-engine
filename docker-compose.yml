@@ -1,0 +1,22 @@
+services:
+  app:
+    build: .
+    image: anon-chat-userbot
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # Must stay in sync with the published container port below.
+      API_HOST: 0.0.0.0
+      API_PORT: 8000
+      SESSIONS_DIR: /app/sessions
+      ACCOUNTS_FILE: /app/accounts.json
+    ports:
+      - "${HOST_PORT:-8000}:8000"
+    volumes:
+      - sessions:/app/sessions
+      - ./accounts.json:/app/accounts.json:ro
+    stdin_open: true
+    tty: true
+
+volumes:
+  sessions:

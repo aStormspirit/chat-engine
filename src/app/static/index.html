@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Анонимный чат</title>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    font: 15px/1.45 system-ui, sans-serif;
+  }
+  header {
+    display: flex;
+    gap: .5rem;
+    align-items: center;
+    padding: .75rem 1rem;
+    border-bottom: 1px solid #8884;
+  }
+  select { padding: .4rem .5rem; border-radius: 6px; border: 1px solid #8886; }
+  .state { font-weight: 600; margin-right: auto; }
+  .state[data-state="idle"] { color: #888; }
+  .state[data-state="searching"] { color: #d98324; }
+  .state[data-state="chatting"] { color: #3a9d3a; }
+  button { padding: .4rem .9rem; border-radius: 6px; border: 1px solid #8886; cursor: pointer; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  #log { flex: 1; margin: 0; padding: 1rem; list-style: none; overflow-y: auto; }
+  #log li {
+    width: fit-content;
+    max-width: 70%;
+    margin-bottom: .5rem;
+    padding: .45rem .7rem;
+    border-radius: 10px;
+  }
+  #log li.out { margin-left: auto; background: #2f6fed; color: #fff; }
+  #log li.in { background: #8882; }
+  #log li.system, #log li.error { width: auto; max-width: 100%; text-align: center; background: none; font-size: .85em; }
+  #log li.system { color: #888; }
+  #log li.error { color: #c0392b; }
+  form { display: flex; gap: .5rem; padding: .75rem 1rem; border-top: 1px solid #8884; }
+  input { flex: 1; padding: .5rem .7rem; border-radius: 6px; border: 1px solid #8886; }
+</style>
+</head>
+<body>
+  <header>
+    <select id="account" aria-label="Аккаунт"></select>
+    <span id="state" class="state" data-state="idle">нет соединения</span>
+    <button id="start" type="button">Начать чат</button>
+    <button id="stop" type="button">Закончить</button>
+  </header>
+
+  <ul id="log"></ul>
+
+  <form id="form">
+    <input id="text" autocomplete="off" placeholder="Сообщение…" maxlength="4096">
+    <button type="submit">Отправить</button>
+  </form>
+
+<script>
+const STATE_LABELS = {
+  idle: 'свободен',
+  searching: 'ищем собеседника…',
+  chatting: 'собеседник на связи',
+};
+
+const log = document.getElementById('log');
+const stateBadge = document.getElementById('state');
+const startButton = document.getElementById('start');
+const stopButton = document.getElementById('stop');
+const accountSelect = document.getElementById('account');
+const form = document.getElementById('form');
+const input = document.getElementById('text');
+
+let socket = null;
+let state = 'idle';
+let accountId = null;
+let accountsById = new Map();
+let reconnectTimer = null;
+
+function append(direction, text) {
+  const item = document.createElement('li');
+  item.className = direction;
+  item.textContent = text;
+  log.append(item);
+  log.scrollTop = log.scrollHeight;
+}
+
+function setState(next) {
+  state = next;
+  stateBadge.dataset.state = next;
+  stateBadge.textContent = STATE_LABELS[next] ?? next;
+  const online = socket?.readyState === WebSocket.OPEN;
+  startButton.disabled = !online || next !== 'idle';
+  stopButton.disabled = !online || next === 'idle';
+  input.disabled = !online || next !== 'chatting';
+}
+
+function setOffline(label) {
+  stateBadge.dataset.state = 'idle';
+  stateBadge.textContent = label;
+  startButton.disabled = true;
+  stopButton.disabled = true;
+  input.disabled = true;
+}
+
+function send(command) {
+  if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(command));
+}
+
+function connect() {
+  const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
+  const connectedTo = accountId;
+  socket = new WebSocket(`${scheme}://${location.host}/api/v1/accounts/${connectedTo}/chat/ws`);
+
+  socket.addEventListener('message', (event) => {
+    const payload = JSON.parse(event.data);
+
+    if (payload.type === 'snapshot') {
+      log.replaceChildren();
+      payload.messages.forEach((message) => append(message.direction, message.text));
+    } else if (payload.type === 'message') {
+      append(payload.message.direction, payload.message.text);
+    } else if (payload.type === 'error') {
+      append('error', payload.detail);
+      return;
+    }
+    if (payload.state) setState(payload.state);
+  });
+
+  socket.addEventListener('close', () => {
+    // Ignore the close caused by switching to another account.
+    if (accountId !== connectedTo) return;
+    setOffline('переподключение…');
+    reconnectTimer = setTimeout(connect, 2000);
+  });
+}
+
+function switchAccount(nextAccountId) {
+  clearTimeout(reconnectTimer);
+  accountId = nextAccountId;
+  log.replaceChildren();
+
+  if (socket) {
+    socket.close();
+    socket = null;
+  }
+
+  if (!accountsById.get(nextAccountId)?.authorized) {
+    setOffline('аккаунт не авторизован');
+    return;
+  }
+  setOffline('подключение…');
+  connect();
+}
+
+async function loadAccounts() {
+  let accounts = [];
+  try {
+    accounts = await (await fetch('/api/v1/accounts')).json();
+  } catch {
+    setOffline('сервер недоступен');
+    return;
+  }
+
+  accountsById = new Map(accounts.map((account) => [account.id, account]));
+  accountSelect.replaceChildren();
+
+  for (const account of accounts) {
+    const option = document.createElement('option');
+    option.value = account.id;
+    option.textContent = account.authorized
+      ? `${account.id} (@${account.username})`
+      : `${account.id} — не авторизован`;
+    accountSelect.append(option);
+  }
+
+  if (!accounts.length) {
+    setOffline('аккаунты не настроены');
+    return;
+  }
+
+  const selected = accounts.find((account) => account.authorized) ?? accounts[0];
+  accountSelect.value = selected.id;
+  switchAccount(selected.id);
+}
+
+accountSelect.addEventListener('change', () => switchAccount(accountSelect.value));
+
+startButton.addEventListener('click', () => send({ action: 'start' }));
+stopButton.addEventListener('click', () => send({ action: 'stop' }));
+
+function submitMessage() {
+  const text = input.value.trim();
+  if (!text) return;
+  send({ action: 'send', text });
+  input.value = '';
+}
+
+form.addEventListener('submit', (event) => {
+  event.preventDefault();
+  submitMessage();
+});
+
+// Implicit form submission is unreliable with synthetic key events.
+input.addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter' || event.isComposing) return;
+  event.preventDefault();
+  submitMessage();
+});
+
+setOffline('загрузка…');
+loadAccounts();
+</script>
+</body>
+</html>
