@@ -147,12 +147,12 @@ Settings → Secrets and variables → Actions, на уровне репозит
 
 | Тип | Имя | Значение |
 | --- | --- | --- |
-| Variable | `DOCKERHUB_USERNAME` | логин Docker Hub |
+| Variable или Secret | `DOCKERHUB_USERNAME` | логин Docker Hub |
 | Variable | `DOCKERHUB_IMAGE` | необязательно, по умолчанию `<DOCKERHUB_USERNAME>/chat-engine` |
 | Secret | `DOCKERHUB_TOKEN` | Personal Access Token Docker Hub с правами Read & Write |
 
-Логин задаётся переменной, а не секретом: GitHub вырезает секреты из выходных
-данных job, и имя образа не дошло бы до деплоя.
+Если логин задан секретом, GitHub маскирует его в логах, и имя образа там
+отображается как `***`.
 
 Доступ к серверу (на уровне репозитория или окружения `production`):
 

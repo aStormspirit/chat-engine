@@ -10,8 +10,14 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# The image name is resolved in every job: job outputs that contain a secret
+# (the username may be one) are dropped by GitHub.
 env:
-  DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
+  DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME || secrets.DOCKERHUB_USERNAME }}
+  IMAGE_NAME: >-
+    ${{ vars.DOCKERHUB_IMAGE || format('{0}/{1}',
+    vars.DOCKERHUB_USERNAME || secrets.DOCKERHUB_USERNAME || 'local',
+    github.event.repository.name) }}
 
 jobs:
   lint:
@@ -38,18 +44,13 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    outputs:
-      image: ${{ steps.image.outputs.ref }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Resolve image name
         id: image
-        env:
-          DOCKERHUB_IMAGE: ${{ vars.DOCKERHUB_IMAGE }}
         run: |
-          name="${DOCKERHUB_IMAGE:-${DOCKERHUB_USERNAME:-local}/${GITHUB_REPOSITORY#*/}}"
-          name="${name,,}"
+          name="${IMAGE_NAME,,}"
           echo "name=${name}" >> "$GITHUB_OUTPUT"
           echo "ref=${name}:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
 
@@ -87,11 +88,13 @@ jobs:
       group: deploy-production
       cancel-in-progress: false
     env:
-      APP_IMAGE: ${{ needs.build.outputs.image }}
       # Relative to the SSH user's home directory unless an absolute path is given.
       DEPLOY_PATH: ${{ vars.DEPLOY_PATH || 'chat-engine' }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Resolve image name
+        run: echo "APP_IMAGE=${IMAGE_NAME,,}:${GITHUB_SHA}" >> "$GITHUB_ENV"
 
       - name: Configure SSH
         env:
