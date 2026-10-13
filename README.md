@@ -108,8 +108,80 @@ docker compose logs -f
 Неавторизованные аккаунты не мешают старту: они остаются в списке со статусом
 «не авторизован», их эндпоинты отвечают `503`, остальные работают нормально.
 
-Сессии лежат в именованном томе `sessions` — он переживает пересборку образа.
-Для резервной копии: `docker compose cp app:/app/sessions ./sessions-backup`.
+Сессии лежат в каталоге `./sessions` рядом с `docker-compose.yml` (bind mount) —
+он переживает пересборку образа и обновления. Контейнер пишет в него от UID 1000.
+
+## CI/CD
+
+Workflow `.github/workflows/ci-cd.yml`:
+
+- **lint** — `ruff check` и `ruff format --check` на каждый push и PR;
+- **build** — сборка образа; на `main` он публикуется в Docker Hub с тегами `<sha>` и `latest`;
+- **deploy** — только для `main`: по SSH копирует на сервер `docker-compose.yml` и
+  `deploy/deploy.sh` и запускает скрипт. Он подтягивает образ, перезапускает
+  контейнер и ждёт healthcheck (`/health`). Если проверка не прошла — откатывает на
+  предыдущий образ, и job падает. Успешно задеплоенный тег записывается в
+  `APP_IMAGE` в `.env` сервера.
+
+### Подготовка сервера (один раз)
+
+Нужны Docker и Docker Compose v2.17+. Пользователь деплоя должен входить в группу
+`docker`.
+
+```bash
+sudo mkdir -p /opt/chat-engine && sudo chown $USER /opt/chat-engine
+cd /opt/chat-engine
+# положить сюда .env (по образцу .env.example) и accounts.json
+mkdir -p sessions && sudo chown 1000:1000 sessions
+```
+
+После первого успешного деплоя авторизуйте аккаунты (используется образ из `APP_IMAGE`):
+
+```bash
+docker compose run --rm app login main
+```
+
+### Настройки GitHub
+
+Settings → Secrets and variables → Actions, на уровне репозитория:
+
+| Тип | Имя | Значение |
+| --- | --- | --- |
+| Variable | `DOCKERHUB_USERNAME` | логин Docker Hub |
+| Variable | `DOCKERHUB_IMAGE` | необязательно, по умолчанию `<DOCKERHUB_USERNAME>/chat-engine` |
+| Secret | `DOCKERHUB_TOKEN` | Personal Access Token Docker Hub с правами Read & Write |
+
+Логин задаётся переменной, а не секретом: GitHub вырезает секреты из выходных
+данных job, и имя образа не дошло бы до деплоя.
+
+Доступ к серверу (на уровне репозитория или окружения `production`):
+
+| Тип | Имя | Значение |
+| --- | --- | --- |
+| Secret | `DEPLOY_HOST` | адрес сервера |
+| Secret | `DEPLOY_USER` | пользователь SSH |
+| Secret | `DEPLOY_SSH_KEY` | приватный ключ, публичная часть — в `~/.ssh/authorized_keys` на сервере |
+| Secret | `SSH_KNOWN_HOSTS` | необязательно: вывод `ssh-keyscan -p <port> <host>` |
+| Variable | `DEPLOY_PATH` | необязательно, по умолчанию `~/chat-engine` |
+| Variable | `DEPLOY_PORT` | необязательно, по умолчанию `22` |
+
+Без `SSH_KNOWN_HOSTS` ключ сервера запрашивается при каждом деплое, и подмену
+сервера (MITM) обнаружить нельзя. С ним GitHub подключается только к серверу с
+известным ключом.
+
+Ключ лучше выпустить отдельный: `ssh-keygen -t ed25519 -f deploy_key -N ""`.
+На время деплоя сервер логинится в Docker Hub тем же `DOCKERHUB_TOKEN` (токен
+передаётся через stdin), а после деплоя выходит из аккаунта. Так работает и
+приватный репозиторий, и нет анонимного лимита на скачивание.
+
+### Откат вручную
+
+```bash
+cd /opt/chat-engine
+APP_IMAGE=<dockerhub-user>/chat-engine:<старый-sha> bash deploy.sh
+```
+
+Для приватного репозитория сначала выполните `docker login`.
 
 ## WebSocket
 

@@ -1,7 +1,8 @@
 services:
   app:
     build: .
-    image: anon-chat-userbot
+    # Set by deploy/deploy.sh on the server; locally the image is built from source.
+    image: ${APP_IMAGE:-anon-chat-userbot}
     restart: unless-stopped
     env_file: .env
     environment:
@@ -13,10 +14,7 @@ services:
     ports:
       - "${HOST_PORT:-8000}:8000"
     volumes:
-      - sessions:/app/sessions
+      - ./sessions:/app/sessions
       - ./accounts.json:/app/accounts.json:ro
     stdin_open: true
     tty: true
-
-volumes:
-  sessions:
