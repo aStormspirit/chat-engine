@@ -64,8 +64,8 @@ class Settings(BaseSettings):
         r"собеседник найден|найден собеседник|partner found|chat started"
     )
     anon_partner_left_pattern: str = (
-        r"собеседник (покинул|вышел|отключ)|диалог (завершен|завершён|окончен)|"
-        r"partner left|chat (ended|stopped)"
+        r"закончил(?:а|и)? с вами связь|собеседник (покинул|вышел|отключ|закончил)|"
+        r"диалог (завершен|завершён|окончен)|partner left|chat (ended|stopped)"
     )
 
     history_limit: int = Field(200, ge=1, description="Max messages kept in memory per chat")
