@@ -75,6 +75,9 @@ const accountSelect = document.getElementById('account');
 const form = document.getElementById('form');
 const input = document.getElementById('text');
 
+const TOKEN_STORAGE_KEY = 'chatEngineApiToken';
+
+let apiToken = localStorage.getItem(TOKEN_STORAGE_KEY) ?? '';
 let socket = null;
 let state = 'idle';
 let accountId = null;
@@ -114,7 +117,8 @@ function send(command) {
 function connect() {
   const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
   const connectedTo = accountId;
-  socket = new WebSocket(`${scheme}://${location.host}/api/v1/accounts/${connectedTo}/chat/ws`);
+  const url = `${scheme}://${location.host}/api/v1/accounts/${connectedTo}/chat/ws`;
+  socket = apiToken ? new WebSocket(url, ['bearer', apiToken]) : new WebSocket(url);
 
   socket.addEventListener('message', (event) => {
     const payload = JSON.parse(event.data);
@@ -157,14 +161,35 @@ function switchAccount(nextAccountId) {
   connect();
 }
 
+function askForToken() {
+  const entered = prompt('API-токен')?.trim();
+  if (!entered) return false;
+  apiToken = entered;
+  localStorage.setItem(TOKEN_STORAGE_KEY, apiToken);
+  return true;
+}
+
 async function loadAccounts() {
-  let accounts = [];
+  let response;
   try {
-    accounts = await (await fetch('/api/v1/accounts')).json();
+    const headers = apiToken ? { Authorization: `Bearer ${apiToken}` } : {};
+    response = await fetch('/api/v1/accounts', { headers });
   } catch {
     setOffline('сервер недоступен');
     return;
   }
+
+  if (response.status === 401) {
+    if (askForToken()) return loadAccounts();
+    setOffline('нужен API-токен');
+    return;
+  }
+  if (!response.ok) {
+    setOffline(`ошибка сервера: ${response.status}`);
+    return;
+  }
+
+  const accounts = await response.json();
 
   accountsById = new Map(accounts.map((account) => [account.id, account]));
   accountSelect.replaceChildren();

@@ -12,9 +12,22 @@ services:
       SESSIONS_DIR: /app/sessions
       ACCOUNTS_FILE: /app/accounts.json
     ports:
-      - "${HOST_PORT:-8000}:8000"
+      # Localhost only: public traffic arrives through the Cloudflare tunnel.
+      - "127.0.0.1:${HOST_PORT:-8000}:8000"
     volumes:
       - ./sessions:/app/sessions
       - ./accounts.json:/app/accounts.json:ro
     stdin_open: true
     tty: true
+
+  # Enabled with COMPOSE_PROFILES=tunnel; the tunnel routes its hostname to http://app:8000.
+  cloudflared:
+    image: cloudflare/cloudflared:2026.10.0
+    profiles: [tunnel]
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:-}
+    depends_on:
+      app:
+        condition: service_healthy

@@ -49,6 +49,9 @@ class Settings(BaseSettings):
 
     api_host: str = "127.0.0.1"
     api_port: int = 8000
+    api_token: str | None = Field(
+        None, description="Bearer token required by /api/v1; auth is disabled when empty"
+    )
     cors_origins: list[str] = ["*"]
 
     anon_bot_username: str = Field(

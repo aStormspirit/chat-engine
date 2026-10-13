@@ -3,13 +3,14 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import __version__
 from app.accounts import AccountManager
+from app.api.deps import require_token
 from app.api.routers import accounts, chat, ws
 from app.config import settings
 from app.services.anon_chat import ChatError
@@ -21,6 +22,9 @@ STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    if not settings.api_token:
+        logger.warning("API_TOKEN is not set: /api/v1 is accessible without authentication")
+
     manager = AccountManager(settings)
     app.state.accounts = manager
 
@@ -49,8 +53,10 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     app.add_exception_handler(ChatError, handle_chat_error)
-    app.include_router(accounts.router, prefix="/api/v1")
-    app.include_router(chat.router, prefix="/api/v1")
+    authenticated = [Depends(require_token)]
+    app.include_router(accounts.router, prefix="/api/v1", dependencies=authenticated)
+    app.include_router(chat.router, prefix="/api/v1", dependencies=authenticated)
+    # The WebSocket route checks the token itself: HTTPBearer only handles HTTP requests.
     app.include_router(ws.router, prefix="/api/v1")
 
     @app.get("/health", tags=["service"], summary="Проверка живости")

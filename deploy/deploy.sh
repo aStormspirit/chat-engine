@@ -35,9 +35,9 @@ fi
 previous="$(sed -n 's/^APP_IMAGE=//p' .env | tail -n 1)"
 
 echo "Deploying ${APP_IMAGE} (previous: ${previous:-none})"
-docker compose pull app
+docker compose pull
 
-if ! docker compose up -d --no-build --wait --wait-timeout 120 app; then
+if ! docker compose up -d --no-build --remove-orphans --wait --wait-timeout 120; then
   echo "Deployment failed, recent logs:" >&2
   docker compose logs --tail 100 app >&2 || true
   if [[ -n $previous && $previous != "$APP_IMAGE" ]]; then

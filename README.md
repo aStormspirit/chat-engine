@@ -107,7 +107,8 @@ docker compose up -d
 docker compose logs -f
 ```
 
-Сервис поднимется на `http://<сервер>:8000` (порт меняется через `HOST_PORT`).
+Сервис поднимется на `http://127.0.0.1:8000` (порт меняется через `HOST_PORT`);
+снаружи он доступен только через Cloudflare Tunnel, см. раздел CI/CD.
 Неавторизованные аккаунты не мешают старту: они остаются в списке со статусом
 «не авторизован», их эндпоинты отвечают `503`, остальные работают нормально.
 
@@ -138,6 +139,18 @@ cd /opt/chat-engine
 # готовые сессии — в sessions/<id>.session
 mkdir -p sessions && sudo chown -R 1000:1000 sessions
 ```
+
+Наружу сервис публикуется через Cloudflare Tunnel: порт `8000` открыт только на
+`127.0.0.1`, а контейнер `cloudflared` включается строками в `.env` сервера:
+
+```
+API_TOKEN=<openssl rand -hex 32>
+COMPOSE_PROFILES=tunnel
+TUNNEL_TOKEN=<токен туннеля из Cloudflare Zero Trust → Networks → Tunnels>
+```
+
+Маршрут туннеля (`bots.chatwithyou.site → http://app:8000`) настраивается в
+Cloudflare, а не в репозитории.
 
 После первого успешного деплоя авторизуйте аккаунты (используется образ из `APP_IMAGE`):
 
@@ -187,9 +200,30 @@ APP_IMAGE=<dockerhub-user>/chat-engine:<старый-sha> bash deploy.sh
 
 Для приватного репозитория сначала выполните `docker login`.
 
+## Авторизация
+
+Если задан `API_TOKEN`, все запросы к `/api/v1` требуют заголовок
+`Authorization: Bearer <API_TOKEN>`, иначе ответ `401`. `/health` и `/docs`
+открыты; в Swagger токен вводится кнопкой Authorize. Без `API_TOKEN` авторизация
+выключена — для локальной разработки, при старте пишется предупреждение.
+
+WebSocket принимает токен тем же заголовком, а из браузера — подпротоколами
+`new WebSocket(url, ["bearer", token])`, чтобы токен не попадал в URL и логи.
+Демо-страница спрашивает токен при ответе `401` и хранит его в `localStorage`.
+
+```python
+import httpx
+
+client = httpx.Client(
+    base_url="https://bots.chatwithyou.site/api/v1",
+    headers={"Authorization": f"Bearer {CHAT_ENGINE_TOKEN}"},
+)
+client.post("/accounts/main/chat/start").raise_for_status()
+```
+
 ## WebSocket
 
-`ws://<сервер>:8000/api/v1/accounts/{account_id}/chat/ws` — основной способ
+`wss://<домен>/api/v1/accounts/{account_id}/chat/ws` — основной способ
 работы с чатом.
 
 Клиент отправляет команды:
@@ -263,8 +297,8 @@ ANON_STOP_COMMAND=/stop
   теряется при перезапуске; для продакшена её стоит вынести в Redis.
 - Приложение однопроцессное: состояние живёт в памяти, поэтому масштабировать
   репликами нельзя без внешнего хранилища.
-- API и WebSocket не аутентифицированы — наружу выставлять только за обратным
-  прокси с авторизацией и TLS.
+- Один общий `API_TOKEN` без ролей и сроков действия; для смены — заменить
+  значение в `.env` на сервере и перезапустить контейнер.
 - Если бот управляется inline-кнопками, а не текстовыми командами, их нужно
   нажимать через `message.click()` — в шаблоне этого нет.
 

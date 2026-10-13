@@ -1,10 +1,10 @@
 import asyncio
 import logging
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
 
-from app.api.deps import WsAccountDep
+from app.api.deps import WS_BEARER_SUBPROTOCOL, WsAccountDep, require_token_ws
 from app.api.schemas import (
     ChatAction,
     ChatCommand,
@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["chat"])
 
 
-@router.websocket("/accounts/{account_id}/chat/ws")
+@router.websocket("/accounts/{account_id}/chat/ws", dependencies=[Depends(require_token_ws)])
 async def chat_socket(websocket: WebSocket, account: WsAccountDep) -> None:
     """Двусторонний канал чата одного аккаунта.
 
@@ -28,8 +28,14 @@ async def chat_socket(websocket: WebSocket, account: WsAccountDep) -> None:
     `text` обязателен для `send`. Сервер сразу после подключения присылает
     `snapshot`, затем события `state` / `message` и `error` на неверные
     команды. Неизвестный или неавторизованный аккаунт — закрытие с кодом 1008.
+
+    Токен: заголовок `Authorization: Bearer <token>` или, из браузера,
+    подпротоколы `["bearer", "<token>"]`.
     """
-    await websocket.accept()
+    requested = websocket.scope.get("subprotocols", [])
+    await websocket.accept(
+        subprotocol=WS_BEARER_SUBPROTOCOL if WS_BEARER_SUBPROTOCOL in requested else None
+    )
     service = account.service
 
     with service.subscribe() as events:
