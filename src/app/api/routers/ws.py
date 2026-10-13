@@ -22,11 +22,12 @@ router = APIRouter(tags=["chat"])
 
 @router.websocket("/accounts/{account_id}/chat/ws")
 async def chat_socket(websocket: WebSocket, account: WsAccountDep) -> None:
-    """Full-duplex chat channel for one account.
+    """Двусторонний канал чата одного аккаунта.
 
-    Client sends `{"action": "start" | "stop" | "send", "text": "..."}`,
-    server pushes a `snapshot` on connect and then `state` / `message` /
-    `error` events.
+    Клиент шлёт `{"action": "start" | "stop" | "send", "text": "..."}`,
+    `text` обязателен для `send`. Сервер сразу после подключения присылает
+    `snapshot`, затем события `state` / `message` и `error` на неверные
+    команды. Неизвестный или неавторизованный аккаунт — закрытие с кодом 1008.
     """
     await websocket.accept()
     service = account.service

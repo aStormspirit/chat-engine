@@ -53,8 +53,9 @@ def create_app() -> FastAPI:
     app.include_router(chat.router, prefix="/api/v1")
     app.include_router(ws.router, prefix="/api/v1")
 
-    @app.get("/health", tags=["service"])
+    @app.get("/health", tags=["service"], summary="Проверка живости")
     async def health() -> dict[str, str]:
+        """Отвечает, пока процесс запущен; состояние аккаунтов не проверяет."""
         return {"status": "ok"}
 
     # Mounted last so that API routes keep priority over the demo UI.
