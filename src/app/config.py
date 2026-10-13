@@ -34,8 +34,12 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    api_id: int = Field(..., description="Telegram API ID from my.telegram.org")
-    api_hash: str = Field(..., description="Telegram API hash from my.telegram.org")
+    api_id: int | None = Field(
+        None, description="Default Telegram API ID for accounts that do not set their own"
+    )
+    api_hash: str | None = Field(
+        None, description="Default Telegram API hash for accounts that do not set their own"
+    )
 
     sessions_dir: Path = Path("sessions")
     accounts_file: Path | None = Field(None, description="JSON file with a list of accounts")
@@ -84,12 +88,20 @@ class Settings(BaseSettings):
                 raise ValueError(f"Duplicate account id: {config.id}")
             seen.add(config.id)
 
+            api_id = config.api_id or self.api_id
+            api_hash = config.api_hash or self.api_hash
+            if not api_id or not api_hash:
+                raise ValueError(
+                    f"Account {config.id!r}: set api_id and api_hash in the accounts file "
+                    "or API_ID and API_HASH in .env"
+                )
+
             session_path = config.session_name or str(self.sessions_dir / config.id)
             resolved.append(
                 ResolvedAccount(
                     id=config.id,
-                    api_id=config.api_id or self.api_id,
-                    api_hash=config.api_hash or self.api_hash,
+                    api_id=api_id,
+                    api_hash=api_hash,
                     session_path=session_path,
                     phone=config.phone,
                     anon_bot_username=config.anon_bot_username or self.anon_bot_username,

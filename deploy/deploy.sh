@@ -10,12 +10,13 @@ export APP_IMAGE
 
 cd "$(dirname "$0")"
 
-for required in .env accounts.json docker-compose.yml; do
+for required in accounts.json docker-compose.yml; do
   if [[ ! -f $required ]]; then
     echo "Missing $(pwd)/$required" >&2
     exit 1
   fi
 done
+touch .env
 mkdir -p sessions
 
 # Same rule as Docker: the first path component is a registry host only if it

@@ -70,9 +70,12 @@ cp accounts.example.json accounts.json   # файл со списком акка
 Либо инлайном в `.env`: `ACCOUNTS=[{"id":"main"},{"id":"second"}]`.
 Если не задано ничего, используется один аккаунт `default`.
 
-Обязателен только `id`; `api_id`, `api_hash` и `anon_bot_username` наследуются из
-`.env`, а файл сессии по умолчанию — `<SESSIONS_DIR>/<id>.session`. Один и тот же
-`API_ID`/`API_HASH` можно использовать для всех аккаунтов.
+Обязателен только `id`; `api_id`, `api_hash` и `anon_bot_username`, если не
+указаны у аккаунта, берутся из `.env`, а файл сессии по умолчанию —
+`<SESSIONS_DIR>/<id>.session`. Один и тот же `API_ID`/`API_HASH` можно использовать
+для всех аккаунтов, а если у каждого аккаунта они свои, `.env` их может не
+содержать вовсе. Готовую сессию нужно запускать с тем же `api_id`/`api_hash`, с
+которыми она была создана.
 
 ## Локальный запуск
 
@@ -131,8 +134,9 @@ Workflow `.github/workflows/ci-cd.yml`:
 ```bash
 sudo mkdir -p /opt/chat-engine && sudo chown $USER /opt/chat-engine
 cd /opt/chat-engine
-# положить сюда .env (по образцу .env.example) и accounts.json
-mkdir -p sessions && sudo chown 1000:1000 sessions
+# положить сюда accounts.json и при необходимости .env (по образцу .env.example);
+# готовые сессии — в sessions/<id>.session
+mkdir -p sessions && sudo chown -R 1000:1000 sessions
 ```
 
 После первого успешного деплоя авторизуйте аккаунты (используется образ из `APP_IMAGE`):
